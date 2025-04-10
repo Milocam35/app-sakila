@@ -1,11 +1,12 @@
 
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException # type: ignore
 from sqlalchemy.orm import Session
 from config.database import get
 import config.models as models, schemas.RentalSchema as schemas
 from services import RentalService
-from schemas.FilmOutSchema import FilmOut 
+from fastapi.logger import logger # type: ignore
+import logging
+logger.setLevel(logging.DEBUG)
 
 
 router = APIRouter(prefix="/rentals", tags=["Rentals"])
@@ -21,63 +22,38 @@ def get_rental(rental_id: int, db: Session = Depends(get)):
         raise HTTPException(status_code=404, detail="Alquiler no encontrado")
     return rental
 
-@router.get("-by-customer/{customer_id}", response_model=list[schemas.RentalResponseByCustomer])
+@router.get("/rentals-by-customer/{customer_id}", response_model=list[schemas.RentalResponseByCustomer])
 def get_rental_by_customer(customer_id: int, db: Session = Depends(get)):
-    rentals = (
-        db.query(
-            models.Rental.rental_id,
-            models.Rental.rental_date,
-            models.Rental.return_date,
-            models.Rental.customer_id,
-            models.Inventory.film_id, 
+    try:
+        rentals = (
+            db.query(
+                models.Rental.rental_id,
+                models.Rental.rental_date,
+                models.Rental.return_date,
+                models.Rental.customer_id,
+                models.Inventory.film_id, 
+            )
+            .join(models.Inventory, models.Rental.inventory_id == models.Inventory.inventory_id)
+            .filter(models.Rental.customer_id == customer_id)
+            .all()
         )
-        .join(models.Inventory, models.Rental.inventory_id == models.Inventory.inventory_id)
-        .filter(models.Rental.customer_id == customer_id)
-        .all()
-    )
 
-    if not rentals:
-        raise HTTPException(status_code=404, detail="Alquiler no encontrado")
+        if not rentals:
+            raise HTTPException(status_code=404, detail="Alquiler no encontrado")
 
-    return [
-        {
-            "rental_id": rental.rental_id,
-            "rental_date": rental.rental_date,
-            "return_date": rental.return_date,
-            "customer_id": rental.customer_id,
-            "film_id": rental.film_id,
-        }
-        for rental in rentals
-    ]
-
-@router.get("/available-films/{store_id}", response_model=List[FilmOut])
-def get_available_films(store_id: int, db: Session = Depends(get)):
-    # Subconsulta de inventarios actualmente rentados (sin return_date)
-    rented_inventory = (
-        db.query(models.Rental.inventory_id)
-        .filter(models.Rental.return_date == None)
-        .subquery()
-    )
-
-    # Inventarios disponibles en esa tienda
-    available_inventory = (
-        db.query(models.Inventory)
-        .filter(
-            models.Inventory.store_id == store_id,
-            ~models.Inventory.inventory_id.in_(rented_inventory)
-        )
-        .subquery()
-    )
-
-    # Películas únicas con copias disponibles
-    available_films = (
-        db.query(models.Film)
-        .join(available_inventory, models.Film.film_id == available_inventory.c.film_id)
-        .distinct()
-        .all()
-    )
-
-    return available_films
+        return [
+            {
+                "rental_id": rental.rental_id,
+                "rental_date": rental.rental_date,
+                "return_date": rental.return_date,
+                "customer_id": rental.customer_id,
+                "film_id": rental.film_id,
+            }
+            for rental in rentals
+        ]
+    except Exception as e:
+        logger.error(f"Error al obtener rentals: {e}")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 @router.post("/", response_model=schemas.RentalResponse)
 def create_rental(rental: schemas.RentalCreate, db: Session = Depends(get)): 

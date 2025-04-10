@@ -50,7 +50,7 @@ export const getAvailableMovies = async () => {
 
 export const getCustomerRentals = async (customerId) => {
     try {
-      const response = await api.get(`/rentals-by-customer/${customerId}`);
+      const response = await api.get(`rentals/rentals-by-customer/${customerId}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching customer rentals:', error);

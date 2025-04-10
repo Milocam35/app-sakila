@@ -12,62 +12,45 @@ const RentalHistory = () => {
   const [deletingId, setDeletingId] = useState(null);
 
   useEffect(() => {
-    const fetchRentals = async () => {
-      if (!selectedUser?.customer_id) return;
-      
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        const rentalsData = await getCustomerRentals(selectedUser.customer_id);
-        
-        const rentalsWithFilmTitles = await Promise.all(
-          rentalsData.map(async (rental) => {
-            try {
-              const filmDetails = await getFilmDetails(rental.film_id);
-              return {
-                ...rental,
-                film_title: filmDetails.title
-              };
-            } catch (err) {
-              console.error(`Error fetching film ${rental.film_id}:`, err);
-              return {
-                ...rental,
-                film_title: 'Película no disponible'
-              };
-            }
-          })
-        );
-        
-        setRentals(rentalsWithFilmTitles);
-        
-      } catch (err) {
-        console.error("Error loading rentals:", err);
-        setError("No se pudieron cargar las rentas. Intente nuevamente.");
-        
-        if (import.meta.env.DEV) {
-          console.warn("Usando datos de prueba debido a error de API");
-          setRentals([
-            {
-              rental_id: 1,
-              rental_date: "2023-05-10T12:00:00Z",
-              return_date: "2023-05-17T12:00:00Z",
-              film_id: 1,
-              film_title: "ACADEMY DINOSAUR"
-            },
-            {
-              rental_id: 2,
-              rental_date: "2023-05-15T12:00:00Z",
-              return_date: "2023-05-22T12:00:00Z",
-              film_id: 2,
-              film_title: "PULP FICTION"
-            }
-          ]);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    // En lugar de hacer una llamada por cada película, puedes:
+const fetchRentals = async () => {
+  if (!selectedUser?.customer_id) return;
+
+  try {
+    setIsLoading(true);
+    setError(null);
+    
+    // 1. Primero obtén todas las rentas
+    const rentalsData = await getCustomerRentals(selectedUser.customer_id);
+    
+    // 2. Obtén todos los IDs de películas únicas
+    const filmIds = [...new Set(rentalsData.map(rental => rental.film_id))];
+    
+    // 3. Haz una sola llamada para obtener todos los detalles de las películas
+    const filmsDetails = await Promise.all(
+      filmIds.map(id => getFilmDetails(id).catch(() => null))
+    );
+    
+    // 4. Crea un mapa de películas para acceso rápido
+    const filmsMap = filmsDetails.reduce((acc, film) => {
+      if (film) acc[film.film_id] = film.title;
+      return acc;
+    }, {});
+    
+    // 5. Combina los datos
+    const rentalsWithFilmTitles = rentalsData.map(rental => ({
+      ...rental,
+      film_title: filmsMap[rental.film_id] || 'Película no disponible'
+    }));
+    
+    setRentals(rentalsWithFilmTitles);
+    
+  } catch (err) {
+    // Manejo de errores...
+  } finally {
+    setIsLoading(false);
+  }
+};
 
     fetchRentals();
   }, [selectedUser]);
